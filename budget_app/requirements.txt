@@ -1,1 +1,5 @@
-wheel==0.45.1
+Flask
+pandas
+plotly
+gunicorn
+
