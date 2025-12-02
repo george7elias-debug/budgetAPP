@@ -27,7 +27,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Initialize DB on startup (works with Gunicorn/Render)
+# Initialize DB immediately on startup
 init_db()
 
 # ----------------------
@@ -44,6 +44,17 @@ def get_history():
 def add_transaction(t_type, description, amount, date, recurring):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
+    # Ensure table exists (safe for first writes on Render)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT,
+            description TEXT,
+            amount REAL,
+            date TEXT,
+            recurring TEXT
+        )
+    ''')
     c.execute("INSERT INTO transactions (type, description, amount, date, recurring) VALUES (?, ?, ?, ?, ?)",
               (t_type, description, amount, date, recurring))
     conn.commit()
@@ -73,15 +84,19 @@ def update_transaction(tx_id, t_type, description, amount, date, recurring):
 @app.route("/", methods=["GET", "POST"])
 def index():
     if request.method == "POST":
-        t_type = request.form["type"]
-        description = request.form["description"]
-        amount = float(request.form["amount"])
-        date = request.form["date"]
-        recurring = request.form["recurring"]
-        add_transaction(t_type, description, amount, date, recurring)
+        try:
+            # Log form data for debugging
+            print("Form data:", request.form)
+            t_type = request.form["type"]
+            description = request.form["description"]
+            amount = float(request.form["amount"])
+            date = request.form["date"]
+            recurring = request.form["recurring"]
+            add_transaction(t_type, description, amount, date, recurring)
+        except Exception as e:
+            print("Error adding transaction:", e)
         return redirect(url_for("index"))
 
-    # Fetch history and prepare for table/chart
     history = get_history()
     return render_template("index.html", history=history)
 
@@ -101,5 +116,5 @@ def update(tx_id):
     return redirect(url_for("index"))
 
 if __name__ == "__main__":
-    # Local debug
+    # Local development
     app.run(debug=True)
