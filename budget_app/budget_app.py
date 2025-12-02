@@ -67,7 +67,7 @@ def update_transaction(tx_id, t_type, description, amount, date, recurring, freq
 def expand_recurring(transactions, end_date=None):
     expanded = []
     if not end_date:
-        end_date = datetime.now() + timedelta(days=365)
+        end_date = datetime.now() + timedelta(days=365*5)
     for t in transactions:
         t_type, desc, amount, date_str, recurring, freq = t[1], t[2], t[3], t[4], t[5], t[6]
         date = datetime.strptime(date_str, "%Y-%m-%d")
