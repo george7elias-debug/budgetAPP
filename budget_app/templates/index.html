@@ -10,7 +10,6 @@
 
 <h1 class="mb-4">Budget Tracker</h1>
 
-<!-- Add Transaction Form -->
 <form method="POST" class="mb-4">
 <div class="row g-2">
 <div class="col"><input type="text" name="description" class="form-control" placeholder="Description" required></div>
@@ -31,6 +30,7 @@
 <div class="col" id="frequency-container" style="display:none;">
 <select name="frequency" class="form-select">
 <option value="Weekly">Weekly</option>
+<option value="Biweekly">Biweekly</option>
 <option value="Monthly">Monthly</option>
 <option value="Yearly">Yearly</option>
 </select>
@@ -65,14 +65,13 @@
 <td>{% if t[5] == 'Recurring' %}<span class="badge bg-success">Recurring</span> ({{ t[6] }}){% else %}<span class="badge bg-secondary">One-time</span>{% endif %}</td>
 <td>
 <a href="{{ url_for('delete', tx_id=t[0]) }}" class="btn btn-danger btn-sm">Remove</a>
-<form method="POST" action="{{ url_for('update', tx_id=t[0]) }}" class="d-inline"><button class="btn btn-warning btn-sm" type="submit">Edit</button></form>
+<a href="{{ url_for('edit', tx_id=t[0]) }}" class="btn btn-warning btn-sm">Edit</a>
 </td>
 </tr>
 {% endfor %}
 </tbody>
 </table>
 
-<!-- Plotly Chart -->
 <div id="net-balance-chart" style="height:400px;"></div>
 
 <script>
@@ -82,14 +81,12 @@ recurringSelect.addEventListener('change', () => {
     freqContainer.style.display = recurringSelect.value==='Recurring'?'block':'none';
 });
 
-// Transactions array from Flask
 let transactions = [
 {% for t in transactions %}
 {"date":"{{ t['date'] }}","type":"{{ t['type'] }}","amount":{{ t['amount'] }}},
 {% endfor %}
 ];
 
-// Dynamic date filter min/max
 let allDates = transactions.map(t => t.date).sort();
 if(allDates.length>0){
     document.getElementById("start-date").value = allDates[0];
@@ -100,7 +97,6 @@ if(allDates.length>0){
     document.getElementById("end-date").max = allDates[allDates.length-1];
 }
 
-// Plotly chart function
 function plotChart(data){
     let sorted = data.sort((a,b)=>new Date(a.date)-new Date(b.date));
     let dates=[], balances=[], net=0;
@@ -116,10 +112,8 @@ function plotChart(data){
     Plotly.newPlot('net-balance-chart',[{x:dates,y:balances,type:'scatter',mode:'lines+markers',name:'Net Balance'}], layout);
 }
 
-// Initial plot
 plotChart(transactions);
 
-// Filter button updates chart
 document.getElementById("filter-btn").addEventListener("click", () => {
     let start = document.getElementById("start-date").value;
     let end = document.getElementById("end-date").value;
