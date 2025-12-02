@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 DB_NAME = "budget.db"
 app = Flask(__name__)
 
+# Initialize database
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -24,14 +25,18 @@ def init_db():
 
 init_db()
 
+# Add transaction
 def add_transaction(t_type, description, amount, date, recurring, frequency=None):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    c.execute("INSERT INTO transactions (type, description, amount, date, recurring, frequency) VALUES (?, ?, ?, ?, ?, ?)",
-              (t_type, description, amount, date, recurring, frequency))
+    c.execute(
+        "INSERT INTO transactions (type, description, amount, date, recurring, frequency) VALUES (?, ?, ?, ?, ?, ?)",
+        (t_type, description, amount, date, recurring, frequency)
+    )
     conn.commit()
     conn.close()
 
+# Get all transactions
 def get_transactions():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -40,6 +45,7 @@ def get_transactions():
     conn.close()
     return data
 
+# Delete transaction
 def delete_transaction(tx_id):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -47,6 +53,7 @@ def delete_transaction(tx_id):
     conn.commit()
     conn.close()
 
+# Update transaction (simplified for form submission)
 def update_transaction(tx_id, t_type, description, amount, date, recurring, frequency):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
@@ -56,11 +63,11 @@ def update_transaction(tx_id, t_type, description, amount, date, recurring, freq
     conn.commit()
     conn.close()
 
-# Helper to expand recurring transactions for plotting
+# Expand recurring transactions for plotting
 def expand_recurring(transactions, end_date=None):
     expanded = []
     if not end_date:
-        end_date = datetime.now() + timedelta(days=365)  # 1 year ahead
+        end_date = datetime.now() + timedelta(days=365)
     for t in transactions:
         t_type, desc, amount, date_str, recurring, freq = t[1], t[2], t[3], t[4], t[5], t[6]
         date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -70,7 +77,10 @@ def expand_recurring(transactions, end_date=None):
                 if freq == "Weekly":
                     date += timedelta(weeks=1)
                 elif freq == "Monthly":
-                    date = datetime(date.year + (date.month // 12), ((date.month % 12) + 1), date.day)
+                    month = date.month + 1 if date.month < 12 else 1
+                    year = date.year + 1 if month == 1 else date.year
+                    day = min(date.day, 28)  # prevent invalid date
+                    date = datetime(year, month, day)
                 elif freq == "Yearly":
                     date = datetime(date.year + 1, date.month, date.day)
         else:
@@ -100,7 +110,7 @@ def delete(tx_id):
 
 @app.route("/update/<int:tx_id>", methods=["POST"])
 def update(tx_id):
-    # For simplicity, just redirect (implement full update form as needed)
+    # Placeholder: implement full edit form if desired
     return redirect(url_for("index"))
 
 if __name__ == "__main__":
