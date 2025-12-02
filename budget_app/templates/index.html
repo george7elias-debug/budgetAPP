@@ -1,130 +1,94 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Budget App</title>
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<meta charset="UTF-8">
+<title>Budget App</title>
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="p-4">
 
-    <h1 class="mb-4">Budget Tracker</h1>
+<h1 class="mb-4">Budget Tracker</h1>
 
-    <!-- Add Transaction Form -->
-    <form method="POST" class="mb-4">
-        <div class="row g-2">
-            <div class="col">
-                <input type="text" name="description" class="form-control" placeholder="Description" required>
-            </div>
-            <div class="col">
-                <input type="number" step="0.01" name="amount" class="form-control" placeholder="Amount" required>
-            </div>
-            <div class="col">
-                <select name="type" class="form-select" required>
-                    <option value="Income">Income</option>
-                    <option value="Expense">Expense</option>
-                </select>
-            </div>
-            <div class="col">
-                <input type="date" name="date" class="form-control" required>
-            </div>
-            <div class="col">
-                <select name="recurring" class="form-select" required>
-                    <option value="One-time">One-time</option>
-                    <option value="Recurring">Recurring</option>
-                </select>
-            </div>
-            <div class="col">
-                <button type="submit" class="btn btn-primary w-100">Add</button>
-            </div>
-        </div>
-    </form>
+<!-- Add Transaction Form -->
+<form method="POST" class="mb-4">
+<div class="row g-2">
+<div class="col"><input type="text" name="description" class="form-control" placeholder="Description" required></div>
+<div class="col"><input type="number" step="0.01" name="amount" class="form-control" placeholder="Amount" required></div>
+<div class="col">
+<select name="type" class="form-select" required>
+<option value="Income">Income</option>
+<option value="Expense">Expense</option>
+</select>
+</div>
+<div class="col"><input type="date" name="date" class="form-control" required></div>
+<div class="col">
+<select name="recurring" class="form-select" id="recurring-select" required>
+<option value="One-time">One-time</option>
+<option value="Recurring">Recurring</option>
+</select>
+</div>
+<div class="col" id="frequency-container" style="display:none;">
+<select name="frequency" class="form-select">
+<option value="Weekly">Weekly</option>
+<option value="Monthly">Monthly</option>
+<option value="Yearly">Yearly</option>
+</select>
+</div>
+<div class="col"><button type="submit" class="btn btn-primary w-100">Add</button></div>
+</div>
+</form>
 
-    <!-- Date Range Filter -->
-    <div class="mb-4">
-        <label for="start-date" class="form-label">Start Date:</label>
-        <input type="date" id="start-date" value="{{ history[-1][4] if history else '' }}">
-        <label for="end-date" class="form-label">End Date:</label>
-        <input type="date" id="end-date" value="{{ history[0][4] if history else '' }}">
-        <button id="filter-btn" class="btn btn-secondary btn-sm">Filter</button>
-    </div>
+<!-- Transaction Table -->
+<table class="table table-bordered">
+<thead>
+<tr>
+<th>Description</th><th>Amount</th><th>Type</th><th>Date</th><th>Recurring / Frequency</th><th>Actions</th>
+</tr>
+</thead>
+<tbody id="transaction-table">
+{% for t in history %}
+<tr>
+<td>{{ t[2] }}</td>
+<td>{{ t[3] }}</td>
+<td>{{ t[1] }}</td>
+<td>{{ t[4] }}</td>
+<td>{% if t[5] == 'Recurring' %}<span class="badge bg-success">Recurring</span> ({{ t[6] }}){% else %}<span class="badge bg-secondary">One-time</span>{% endif %}</td>
+<td>
+<a href="{{ url_for('delete', tx_id=t[0]) }}" class="btn btn-danger btn-sm">Remove</a>
+<form method="POST" action="{{ url_for('update', tx_id=t[0]) }}" class="d-inline"><button class="btn btn-warning btn-sm" type="submit">Edit</button></form>
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
 
-    <!-- Transaction Table -->
-    <table class="table table-bordered">
-        <thead>
-            <tr>
-                <th>Description</th>
-                <th>Amount</th>
-                <th>Type</th>
-                <th>Date</th>
-                <th>Recurring</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody id="transaction-table">
-            {% for t in history %}
-            <tr>
-                <td>{{ t[2] }}</td>
-                <td>{{ t[3] }}</td>
-                <td>{{ t[1] }}</td>
-                <td>{{ t[4] }}</td>
-                <td>{{ t[5] }}</td>
-                <td>
-                    <form method="POST" action="{{ url_for('update', tx_id=t[0]) }}" class="d-inline">
-                        <button class="btn btn-warning btn-sm" type="submit">Edit</button>
-                    </form>
-                    <a href="{{ url_for('delete', tx_id=t[0]) }}" class="btn btn-danger btn-sm">Remove</a>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+<!-- Plotly Chart -->
+<div id="net-balance-chart" style="height:400px;"></div>
 
-    <!-- Plotly Chart -->
-    <div id="net-balance-chart" style="height:400px;"></div>
+<script>
+const recurringSelect = document.getElementById("recurring-select");
+const freqContainer = document.getElementById("frequency-container");
+recurringSelect.addEventListener('change', () => {
+freqContainer.style.display = recurringSelect.value==='Recurring'?'block':'none';
+});
 
-    <script>
-        // Build transactions array directly from Jinja
-        let transactions = [
-            {% for t in history %}
-            {
-                date: "{{ t[4] }}",
-                type: "{{ t[1] }}",
-                amount: {{ t[3] }}
-            },
-            {% endfor %}
-        ];
+// Build transactions array from Flask
+let transactions = [
+{% for t in transactions %}
+{"date":"{{ t['date'] }}","type":"{{ t['type'] }}","amount":{{ t['amount'] }}},
+{% endfor %}
+];
 
-        function plotChart(data) {
-            let sorted = data.sort((a,b) => new Date(a.date) - new Date(b.date));
-            let dates = [];
-            let balances = [];
-            let net = 0;
-            sorted.forEach(t => {
-                net += t.type === "Income" ? t.amount : -t.amount;
-                dates.push(t.date);
-                balances.push(net);
-            });
-            let trace = { x: dates, y: balances, type: 'scatter', mode: 'lines+markers', name: 'Net Balance' };
-            Plotly.newPlot('net-balance-chart', [trace], {
-                xaxis: { rangeslider: { visible: true }, title: 'Date' },
-                yaxis: { title: 'Net Balance' }
-            });
-        }
-
-        // Initial plot
-        plotChart(transactions);
-
-        // Filter by date
-        document.getElementById("filter-btn").addEventListener("click", () => {
-            let start = document.getElementById("start-date").value;
-            let end = document.getElementById("end-date").value;
-            let filtered = transactions.filter(t => {
-                return (!start || t.date >= start) && (!end || t.date <= end);
-            });
-            plotChart(filtered);
-        });
-    </script>
+function plotChart(data){
+let sorted = data.sort((a,b)=>new Date(a.date)-new Date(b.date));
+let dates=[], balances=[], net=0;
+sorted.forEach(t=>{net += t.type==="Income"?t.amount:-t.amount; dates.push(t.date); balances.push(net)});
+Plotly.newPlot('net-balance-chart',[{x:dates,y:balances,type:'scatter',mode:'lines+markers',name:'Net Balance'}],
+{xaxis:{rangeslider:{visible:true},title:'Date'},yaxis:{title:'Net Balance'}});
+}
+plotChart(transactions);
+</script>
 
 </body>
 </html>
