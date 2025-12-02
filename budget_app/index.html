@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Budget App</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        button {
+            background: linear-gradient(to right, #4facfe, #00f2fe);
+            border: none;
+            padding: 8px 16px;
+            color: white;
+            font-weight: bold;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+        button:hover {
+            transform: scale(1.05);
+            box-shadow: 0px 4px 15px rgba(0,0,0,0.2);
+        }
+        td {
+            min-width: 80px;
+        }
+    </style>
+</head>
+<body class="container mt-4">
+
+<h1>Budget Tracker</h1>
+
+<h2>Add Transaction</h2>
+<form method="POST" class="mb-4">
+    <div class="row">
+        <div class="col">
+            <select name="type" class="form-select">
+                <option value="income">Income</option>
+                <option value="expense">Expense</option>
+            </select>
+        </div>
+        <div class="col">
+            <input type="text" name="description" class="form-control" placeholder="Description" required>
+        </div>
+        <div class="col">
+            <input type="number" step="0.01" name="amount" class="form-control" placeholder="Amount" required>
+        </div>
+        <div class="col">
+            <input type="date" name="date" class="form-control" required>
+        </div>
+        <div class="col">
+            <select name="recurring" class="form-select">
+                <option value="one-time">One-time</option>
+                <option value="recurring">Recurring</option>
+            </select>
+        </div>
+        <div class="col">
+            <button type="submit">Add</button>
+        </div>
+    </div>
+</form>
+
+<h2>Transaction History</h2>
+<table class="table table-striped table-hover">
+    <thead>
+        <tr>
+            <th>Date</th><th>Type</th><th>Description</th><th>Amount</th><th>Recurring</th><th>Action</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for t in history %}
+        <tr class="{% if t[5]=='recurring' %}table-success{% else %}table-light{% endif %}">
+            <td contenteditable="true" onblur="updateField({{ t[0] }}, 'date', this.innerText)">{{ t[4] }}</td>
+            <td contenteditable="true" onblur="updateField({{ t[0] }}, 'type', this.innerText)">{{ t[1] }}</td>
+            <td contenteditable="true" onblur="updateField({{ t[0] }}, 'description', this.innerText)">{{ t[2] }}</td>
+            <td contenteditable="true" onblur="updateField({{ t[0] }}, 'amount', this.innerText)">{{ t[3] }}</td>
+            <td contenteditable="true" onblur="updateField({{ t[0] }}, 'recurring', this.innerText)">{{ t[5] }}</td>
+            <td>
+                <a href="{{ url_for('remove', t_id=t[0]) }}" class="btn btn-danger btn-sm">Remove</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h3>Filter Chart by Date</h3>
+<div class="row mb-3">
+    <div class="col">
+        <input type="date" id="startDate" class="form-control">
+    </div>
+    <div class="col">
+        <input type="date" id="endDate" class="form-control">
+    </div>
+    <div class="col">
+        <button onclick="redrawChart()" class="btn btn-primary">Apply Filter</button>
+    </div>
+</div>
+
+<h2>Net Balance Chart</h2>
+<div id="chart"></div>
+
+<script>
+// Inline editing and validation
+function updateField(id, field, value) {
+    fetch('/update', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({id: id, field: field, value: value})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if(data.status !== 'success') alert('Update failed: ' + data.message);
+        else redrawChart();
+    })
+    .catch(err => alert('Error updating: ' + err));
+}
+
+// Plotly chart with date range filter
+function redrawChart() {
+    const start = document.getElementById('startDate').value;
+    const end = document.getElementById('endDate').value;
+
+    fetch('/chart-data')
+        .then(res => res.json())
+        .then(data => {
+            let dates = data.dates;
+            let cumulative = data.cumulative;
+
+            if(start) {
+                const startIndex = dates.findIndex(d => d >= start);
+                if(startIndex >= 0) {
+                    dates = dates.slice(startIndex);
+                    cumulative = cumulative.slice(startIndex);
+                }
+            }
+            if(end) {
+                const endIndex = dates.findIndex(d => d > end);
+                if(endIndex >= 0) {
+                    dates = dates.slice(0, endIndex);
+                    cumulative = cumulative.slice(0, endIndex);
+                }
+            }
+
+            Plotly.newPlot('chart', [{
+                x: dates,
+                y: cumulative,
+                type: 'scatter',
+                mode: 'lines+markers',
+                name: 'Net Balance'
+            }], {
+                title: 'Projected Net Balance',
+                xaxis: { title: 'Date' },
+                yaxis: { title: 'Net Balance' },
+                template: 'plotly_dark'
+            });
+        });
+}
+
+// Initial chart draw
+redrawChart();
+</script>
+
+</body>
+</html>
