@@ -9,7 +9,7 @@ app = Flask(__name__)
 # ----------------------
 # Database setup
 # ----------------------
-DB_NAME = os.path.join(os.path.dirname(__file__), "budget.db")
+DB_NAME = os.path.join(app.root_path, "budget.db")
 
 def init_db():
     conn = sqlite3.connect(DB_NAME)
