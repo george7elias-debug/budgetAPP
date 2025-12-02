@@ -30,3 +30,101 @@
             </div>
             <div class="col">
                 <select name="recurring" class="form-select" required>
+                    <option value="One-time">One-time</option>
+                    <option value="Recurring">Recurring</option>
+                </select>
+            </div>
+            <div class="col">
+                <button type="submit" class="btn btn-primary w-100">Add</button>
+            </div>
+        </div>
+    </form>
+
+    <!-- Date Range Filter -->
+    <div class="mb-4">
+        <label for="start-date" class="form-label">Start Date:</label>
+        <input type="date" id="start-date" value="{{ history[-1][4] if history else '' }}">
+        <label for="end-date" class="form-label">End Date:</label>
+        <input type="date" id="end-date" value="{{ history[0][4] if history else '' }}">
+        <button id="filter-btn" class="btn btn-secondary btn-sm">Filter</button>
+    </div>
+
+    <!-- Transaction Table -->
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>Description</th>
+                <th>Amount</th>
+                <th>Type</th>
+                <th>Date</th>
+                <th>Recurring</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="transaction-table">
+            {% for t in history %}
+            <tr>
+                <td>{{ t[2] }}</td>
+                <td>{{ t[3] }}</td>
+                <td>{{ t[1] }}</td>
+                <td>{{ t[4] }}</td>
+                <td>{{ t[5] }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('update', tx_id=t[0]) }}" class="d-inline">
+                        <button class="btn btn-warning btn-sm" type="submit">Edit</button>
+                    </form>
+                    <a href="{{ url_for('delete', tx_id=t[0]) }}" class="btn btn-danger btn-sm">Remove</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Plotly Chart -->
+    <div id="net-balance-chart" style="height:400px;"></div>
+
+    <script>
+        // Build transactions array directly from Jinja
+        let transactions = [
+            {% for t in history %}
+            {
+                date: "{{ t[4] }}",
+                type: "{{ t[1] }}",
+                amount: {{ t[3] }}
+            },
+            {% endfor %}
+        ];
+
+        function plotChart(data) {
+            let sorted = data.sort((a,b) => new Date(a.date) - new Date(b.date));
+            let dates = [];
+            let balances = [];
+            let net = 0;
+            sorted.forEach(t => {
+                net += t.type === "Income" ? t.amount : -t.amount;
+                dates.push(t.date);
+                balances.push(net);
+            });
+            let trace = { x: dates, y: balances, type: 'scatter', mode: 'lines+markers', name: 'Net Balance' };
+            Plotly.newPlot('net-balance-chart', [trace], {
+                xaxis: { rangeslider: { visible: true }, title: 'Date' },
+                yaxis: { title: 'Net Balance' }
+            });
+        }
+
+        // Initial plot
+        plotChart(transactions);
+
+        // Filter by date
+        document.getElementById("filter-btn").addEventListener("click", () => {
+            let start = document.getElementById("start-date").value;
+            let end = document.getElementById("end-date").value;
+            let filtered = transactions.filter(t => {
+                return (!start || t.date >= start) && (!end || t.date <= end);
+            });
+            plotChart(filtered);
+        });
+    </script>
+
+</body>
+</html>
