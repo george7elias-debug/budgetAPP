@@ -1,221 +1,161 @@
-import io
-import base64
-from flask import Flask, request, render_template_string, redirect, url_for
-from datetime import datetime, timedelta
-import plotly.graph_objects as go
-import plotly.io as pio
+from flask import Flask, render_template, request, redirect, url_for, jsonify
+import sqlite3
+import pandas as pd
+from datetime import datetime
 
 app = Flask(__name__)
+DB_NAME = "budget.db"
 
-# ----- Data Models -----
-class Transaction:
-    _id_counter = 1
-    def __init__(self, amount, date, recurring=False, interval_days=0):
-        self.id = Transaction._id_counter
-        Transaction._id_counter += 1
-        self.amount = amount
-        self.date = date
-        self.recurring = recurring
-        self.interval_days = interval_days
-
-class BudgetApp:
-    def __init__(self):
-        self.incomes = []
-        self.expenses = []
-
-    # --- Add/Edit/Remove ---
-    def add_income(self, amount, date, recurring=False, interval_days=0):
-        self.incomes.append(Transaction(amount, date, recurring, interval_days))
-
-    def add_expense(self, amount, date, recurring=False, interval_days=0):
-        self.expenses.append(Transaction(amount, date, recurring, interval_days))
-
-    def remove_transaction(self, t_id, type_):
-        if type_ == 'income':
-            self.incomes = [t for t in self.incomes if t.id != t_id]
-        else:
-            self.expenses = [t for t in self.expenses if t.id != t_id]
-
-    def edit_transaction(self, t_id, type_, amount, date, recurring=False, interval_days=0):
-        lst = self.incomes if type_ == 'income' else self.expenses
-        for t in lst:
-            if t.id == t_id:
-                t.amount = amount
-                t.date = date
-                t.recurring = recurring
-                t.interval_days = interval_days
-                break
-
-    # --- Forecast ---
-    def generate_balance_forecast(self, days_ahead=365*3):
-        today = datetime.today().date()
-        end_date = today + timedelta(days=days_ahead)
-        balance_by_date = {today + timedelta(n): 0 for n in range(days_ahead + 1)}
-
-        # Apply incomes
-        for inc in self.incomes:
-            date = inc.date
-            while date <= end_date:
-                if date >= today:
-                    balance_by_date[date] += inc.amount
-                if inc.recurring:
-                    date += timedelta(days=inc.interval_days)
-                else:
-                    break
-
-        # Apply expenses
-        for exp in self.expenses:
-            date = exp.date
-            while date <= end_date:
-                if date >= today:
-                    balance_by_date[date] -= exp.amount
-                if exp.recurring:
-                    date += timedelta(days=exp.interval_days)
-                else:
-                    break
-
-        # Sorted net balances
-        dates_sorted = sorted(balance_by_date.keys())
-        balances = []
-        net = 0
-        for d in dates_sorted:
-            net += balance_by_date[d]
-            balances.append(net)
-        return dates_sorted, balances
-
-    # --- Plot ---
-    def generate_plot(self):
-        dates, balances = self.generate_balance_forecast()
-        fig = go.Figure()
-
-        # Plot net balance
-        fig.add_trace(go.Scatter(
-            x=dates,
-            y=balances,
-            mode='lines+markers',
-            name='Net Balance',
-            line=dict(color='blue')
-        ))
-
-        fig.update_layout(
-            title='Net Balance Forecast (1 Year)',
-            xaxis_title='Date',
-            yaxis_title='Net Balance',
-            xaxis=dict(rangeslider=dict(visible=True)),
-            yaxis=dict(autorange=True),
-            template='plotly_white'
+# ----------------------
+# Database helpers
+# ----------------------
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            type TEXT,
+            description TEXT,
+            amount REAL,
+            date TEXT,
+            recurring TEXT
         )
+    ''')
+    conn.commit()
+    conn.close()
 
-        return pio.to_html(fig, full_html=False)
+def add_transaction(type_, desc, amount, date, recurring):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO transactions (type, description, amount, date, recurring) VALUES (?, ?, ?, ?, ?)",
+        (type_, desc, amount, date, recurring)
+    )
+    conn.commit()
+    conn.close()
 
-budget = BudgetApp()
+def get_history():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT * FROM transactions ORDER BY date DESC")
+    rows = c.fetchall()
+    conn.close()
+    return rows
 
-# ----- HTML Template -----
-html_template = """
-<!DOCTYPE html>
-<html>
-<head><title>Budget App</title></head>
-<body>
-<h1>Budget Tracker</h1>
+def remove_transaction(t_id):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("DELETE FROM transactions WHERE id=?", (t_id,))
+    conn.commit()
+    conn.close()
 
-<h2>Add Income</h2>
-<form method="POST" action="/">
-    <input type="hidden" name="action" value="add_income">
-    <label>Amount:</label><input name="income" type="number" step="0.01" required><br>
-    <label>Date:</label><input name="income_date" type="date" required><br>
-    <label>Recurring:</label>
-    <select name="income_recurring">
-        <option value="no">One-Time</option>
-        <option value="yes">Recurring</option>
-    </select><br>
-    <label>Interval Days:</label><input name="income_interval" type="number"><br>
-    <button type="submit">Add Income</button>
-</form>
+def get_transaction(t_id):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT * FROM transactions WHERE id=?", (t_id,))
+    row = c.fetchone()
+    conn.close()
+    return row
 
-<h2>Add Expense</h2>
-<form method="POST" action="/">
-    <input type="hidden" name="action" value="add_expense">
-    <label>Amount:</label><input name="expense" type="number" step="0.01" required><br>
-    <label>Date:</label><input name="expense_date" type="date" required><br>
-    <label>Recurring:</label>
-    <select name="expense_recurring">
-        <option value="no">One-Time</option>
-        <option value="yes">Recurring</option>
-    </select><br>
-    <label>Interval Days:</label><input name="expense_interval" type="number"><br>
-    <button type="submit">Add Expense</button>
-</form>
+def update_transaction(t_id, type_, desc, amount, date, recurring):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("""
+        UPDATE transactions
+        SET type=?, description=?, amount=?, date=?, recurring=?
+        WHERE id=?
+    """, (type_, desc, amount, date, recurring, t_id))
+    conn.commit()
+    conn.close()
 
-<hr>
-<h2>Incomes</h2>
-<table border="1">
-<tr><th>Amount</th><th>Date</th><th>Recurring</th><th>Interval</th><th>Action</th></tr>
-{% for t in incomes %}
-<tr>
-<td>{{ t.amount }}</td>
-<td>{{ t.date }}</td>
-<td>{{ 'Yes' if t.recurring else 'No' }}</td>
-<td>{{ t.interval_days }}</td>
-<td>
-    <a href="/remove/income/{{ t.id }}">Remove</a>
-</td>
-</tr>
-{% endfor %}
-</table>
-
-<h2>Expenses</h2>
-<table border="1">
-<tr><th>Amount</th><th>Date</th><th>Recurring</th><th>Interval</th><th>Action</th></tr>
-{% for t in expenses %}
-<tr>
-<td>{{ t.amount }}</td>
-<td>{{ t.date }}</td>
-<td>{{ 'Yes' if t.recurring else 'No' }}</td>
-<td>{{ t.interval_days }}</td>
-<td>
-    <a href="/remove/expense/{{ t.id }}">Remove</a>
-</td>
-</tr>
-{% endfor %}
-</table>
-
-<hr>
-<h2>Net Balance Forecast</h2>
-{{ plot | safe }}
-
-</body>
-</html>
-"""
-
-# ----- Routes -----
-@app.route('/', methods=['GET','POST'])
+# ----------------------
+# Routes
+# ----------------------
+@app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
-        action = request.form.get('action')
-        if action == 'add_income':
-            amt = float(request.form['income'])
-            date_obj = datetime.strptime(request.form['income_date'], "%Y-%m-%d").date()
-            recurring = request.form.get('income_recurring') == 'yes'
-            interval = int(request.form['income_interval']) if request.form.get('income_interval') else 0
-            budget.add_income(amt, date_obj, recurring, interval)
-        elif action == 'add_expense':
-            amt = float(request.form['expense'])
-            date_obj = datetime.strptime(request.form['expense_date'], "%Y-%m-%d").date()
-            recurring = request.form.get('expense_recurring') == 'yes'
-            interval = int(request.form['expense_interval']) if request.form.get('expense_interval') else 0
-            budget.add_expense(amt, date_obj, recurring, interval)
+        type_ = request.form['type']
+        desc = request.form['description']
+        try:
+            amount = float(request.form['amount'])
+        except ValueError:
+            amount = 0
+        date = request.form['date']
+        recurring = request.form['recurring']
+        add_transaction(type_, desc, amount, date, recurring)
         return redirect(url_for('index'))
 
-    plot = budget.generate_plot()
-    return render_template_string(html_template, incomes=budget.incomes, expenses=budget.expenses, plot=plot)
+    history = get_history()
+    return render_template("index.html", history=history)
 
-@app.route('/remove/<type_>/<int:t_id>')
-def remove_transaction(type_, t_id):
-    budget.remove_transaction(t_id, type_)
+@app.route('/remove/<int:t_id>')
+def remove(t_id):
+    remove_transaction(t_id)
     return redirect(url_for('index'))
 
-# ----- Run App -----
+# ----------------------
+# Inline update route
+# ----------------------
+@app.route('/update', methods=['POST'])
+def update_inline():
+    data = request.get_json()
+    t_id = data.get('id')
+    field = data.get('field')
+    value = data.get('value')
+
+    allowed_fields = ['type', 'description', 'amount', 'date', 'recurring']
+    if field not in allowed_fields:
+        return jsonify({'status': 'error', 'message': 'Invalid field'})
+
+    # Validation
+    if field == 'amount':
+        try:
+            value = float(value)
+        except ValueError:
+            return jsonify({'status': 'error', 'message': 'Amount must be numeric'})
+    elif field == 'type' and value not in ['income', 'expense']:
+        return jsonify({'status': 'error', 'message': 'Type must be income or expense'})
+    elif field == 'recurring' and value not in ['one-time', 'recurring']:
+        return jsonify({'status': 'error', 'message': 'Recurring must be one-time or recurring'})
+    elif field == 'date':
+        try:
+            datetime.strptime(value, '%Y-%m-%d')
+        except ValueError:
+            return jsonify({'status': 'error', 'message': 'Invalid date format'})
+
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute(f"UPDATE transactions SET {field}=? WHERE id=?", (value, t_id))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'status': 'success'})
+
+# ----------------------
+# Chart data route
+# ----------------------
+@app.route('/chart-data')
+def chart_data():
+    history = get_history()
+    df = pd.DataFrame(history, columns=['id', 'type', 'description', 'amount', 'date', 'recurring'])
+    if df.empty:
+        return jsonify({'dates': [], 'cumulative': []})
+    
+    df['date'] = pd.to_datetime(df['date'])
+    df.sort_values('date', inplace=True)
+    df['net'] = df.apply(lambda row: row['amount'] if row['type']=='income' else -row['amount'], axis=1)
+    df['cumulative'] = df['net'].cumsum()
+    dates = df['date'].dt.strftime('%Y-%m-%d').tolist()
+    cumulative = df['cumulative'].tolist()
+    
+    return jsonify({'dates': dates, 'cumulative': cumulative})
+
+# ----------------------
+# Main
+# ----------------------
 if __name__ == '__main__':
+    init_db()
     import os
-    port = int(os.environ.get('PORT', 5000))  # Render sets the PORT
+    port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=True)
