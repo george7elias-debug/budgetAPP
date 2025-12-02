@@ -39,6 +39,15 @@
 </div>
 </form>
 
+<!-- Date Range Filter -->
+<div class="mb-4">
+<label>Start Date:</label>
+<input type="date" id="start-date">
+<label>End Date:</label>
+<input type="date" id="end-date">
+<button id="filter-btn" class="btn btn-secondary btn-sm">Apply Date Filter</button>
+</div>
+
 <!-- Transaction Table -->
 <table class="table table-bordered">
 <thead>
@@ -70,24 +79,53 @@
 const recurringSelect = document.getElementById("recurring-select");
 const freqContainer = document.getElementById("frequency-container");
 recurringSelect.addEventListener('change', () => {
-freqContainer.style.display = recurringSelect.value==='Recurring'?'block':'none';
+    freqContainer.style.display = recurringSelect.value==='Recurring'?'block':'none';
 });
 
-// Build transactions array from Flask
+// Transactions array from Flask
 let transactions = [
 {% for t in transactions %}
 {"date":"{{ t['date'] }}","type":"{{ t['type'] }}","amount":{{ t['amount'] }}},
 {% endfor %}
 ];
 
-function plotChart(data){
-let sorted = data.sort((a,b)=>new Date(a.date)-new Date(b.date));
-let dates=[], balances=[], net=0;
-sorted.forEach(t=>{net += t.type==="Income"?t.amount:-t.amount; dates.push(t.date); balances.push(net)});
-Plotly.newPlot('net-balance-chart',[{x:dates,y:balances,type:'scatter',mode:'lines+markers',name:'Net Balance'}],
-{xaxis:{rangeslider:{visible:true},title:'Date'},yaxis:{title:'Net Balance'}});
+// Dynamic date filter min/max
+let allDates = transactions.map(t => t.date).sort();
+if(allDates.length>0){
+    document.getElementById("start-date").value = allDates[0];
+    document.getElementById("start-date").min = allDates[0];
+    document.getElementById("start-date").max = allDates[allDates.length-1];
+    document.getElementById("end-date").value = allDates[allDates.length-1];
+    document.getElementById("end-date").min = allDates[0];
+    document.getElementById("end-date").max = allDates[allDates.length-1];
 }
+
+// Plotly chart function
+function plotChart(data){
+    let sorted = data.sort((a,b)=>new Date(a.date)-new Date(b.date));
+    let dates=[], balances=[], net=0;
+    sorted.forEach(t=>{
+        net += t.type==="Income"?t.amount:-t.amount;
+        dates.push(t.date);
+        balances.push(net);
+    });
+    let layout = {
+        xaxis:{rangeslider:{visible:true}, title:'Date', range:[dates[0], dates[dates.length-1]]},
+        yaxis:{title:'Net Balance'}
+    };
+    Plotly.newPlot('net-balance-chart',[{x:dates,y:balances,type:'scatter',mode:'lines+markers',name:'Net Balance'}], layout);
+}
+
+// Initial plot
 plotChart(transactions);
+
+// Filter button updates chart
+document.getElementById("filter-btn").addEventListener("click", () => {
+    let start = document.getElementById("start-date").value;
+    let end = document.getElementById("end-date").value;
+    let filtered = transactions.filter(t => (!start || t.date>=start)&&(!end || t.date<=end));
+    plotChart(filtered);
+});
 </script>
 
 </body>
